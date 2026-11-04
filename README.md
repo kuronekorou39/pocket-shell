@@ -19,15 +19,17 @@ Pocket Shell は Android の「ワイヤレスデバッグ」を使って、**�
 
 <table>
   <tr>
-    <td align="center"><img src="docs/images/run.png" width="240" alt="実行のタブ"><br>実行</td>
-    <td align="center"><img src="docs/images/log.png" width="240" alt="記録のタブ"><br>記録</td>
-    <td align="center"><img src="docs/images/edit.png" width="240" alt="レシピの編集"><br>レシピの編集</td>
+    <td align="center"><img src="docs/images/run.png" width="200" alt="実行のタブ"><br>実行</td>
+    <td align="center"><img src="docs/images/log.png" width="200" alt="記録のタブ"><br>記録</td>
+    <td align="center"><img src="docs/images/edit.png" width="200" alt="レシピの編集"><br>レシピの編集</td>
+    <td align="center"><img src="docs/images/color.png" width="200" alt="色の選択"><br>色</td>
   </tr>
 </table>
 
 - **実行:** 接続の状態、レシピ、その場で打つコマンドの欄があります。
 - **記録:** 実行すると自動でこのタブに移り、結果が出ます。結果は長押しで選ぶか「コピー」で写せます。
-- **レシピ:** よく使うコマンドに名前を付けて保存します。並べ替えもできます。その場で打ったコマンドも「レシピにする」で保存できます。
+- **レシピ:** よく使うコマンドに名前を付けて保存します。並べ替えもできます。その場で打ったコマンドも「レシピにする」で保存できます。「整理」から、最初の例に戻すことも、すべて削除することもできます。
+- **色:** 右上の「◐ 色」で、画面の配色を選べます（ターミナル・深緑・琥珀・紺・壁紙の色・明るい）。
 
 ## 関連アプリ
 

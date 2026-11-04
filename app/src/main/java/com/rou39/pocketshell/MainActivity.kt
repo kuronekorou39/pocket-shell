@@ -74,10 +74,21 @@ import com.rou39.pocketshell.data.RelatedApp
 import com.rou39.pocketshell.data.RelatedApps
 import com.rou39.pocketshell.pairing.PairingService
 import com.rou39.pocketshell.pairing.PairingState
-import com.rou39.pocketshell.ui.NgColor
-import com.rou39.pocketshell.ui.OkColor
-import com.rou39.pocketshell.ui.OutputBackground
 import com.rou39.pocketshell.ui.PocketTheme
+import com.rou39.pocketshell.ui.ThemePalette
+import com.rou39.pocketshell.ui.colorSchemeFor
+import com.rou39.pocketshell.ui.isLight
+import com.rou39.pocketshell.ui.ng
+import com.rou39.pocketshell.ui.ok
+import com.rou39.pocketshell.ui.output
+import android.graphics.Color as AndroidColor
+import androidx.activity.SystemBarStyle
+import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.semantics.Role
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -86,6 +97,9 @@ private val MONO = FontFamily.Monospace
 
 /** Android 17 のローカルネットワークの許可。 */
 private const val LOCAL_NETWORK = "android.permission.ACCESS_LOCAL_NETWORK"
+
+/** レシピの整理の確認で、どちらの操作か。 */
+private enum class RecipeReset { EXAMPLES, CLEAR }
 
 private const val TAB_RUN = 0
 private const val TAB_LOG = 1
@@ -128,7 +142,17 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
-            PocketTheme {
+            val palette by vm.palette.collectAsState()
+            val light = colorSchemeFor(palette, this).isLight()
+            LaunchedEffect(light) {
+                val style = if (light) {
+                    SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+                } else {
+                    SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+                }
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            }
+            PocketTheme(palette) {
                 Surface(Modifier.fillMaxSize()) { Screen() }
             }
         }
@@ -154,7 +178,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun Screen() {
         val logs by vm.logs.collectAsState()
+        val palette by vm.palette.collectAsState()
         var tab by rememberSaveable { mutableIntStateOf(TAB_RUN) }
+        var choosingPalette by rememberSaveable { mutableStateOf(false) }
 
         // 画面が見えている間だけ接続先を探す（許可が無いと探すたびに選択画面が出るので、許可があるときだけ）
         val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -191,7 +217,8 @@ class MainActivity : ComponentActivity() {
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Spacer(Modifier.width(10.dp))
-                Text("Pocket Shell", style = MaterialTheme.typography.titleLarge)
+                Text("Pocket Shell", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { choosingPalette = true }) { Text("◐ 色") }
             }
             PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.surface) {
                 Tab(selected = tab == TAB_RUN, onClick = { tab = TAB_RUN }, text = { Text("実行") })
@@ -208,6 +235,58 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        if (choosingPalette) {
+            PaletteDialog(palette, onSelect = vm::setPalette, onDismiss = { choosingPalette = false })
+        }
+    }
+
+    /** 配色を選ぶ。押すとすぐ切り替わるので、見ながら選べる。 */
+    @Composable
+    private fun PaletteDialog(selected: ThemePalette, onSelect: (ThemePalette) -> Unit, onDismiss: () -> Unit) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("色") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    for (row in ThemePalette.entries.chunked(3)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            for (p in row) {
+                                val scheme = colorSchemeFor(p, this@MainActivity)
+                                val chosen = p == selected
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .selectable(selected = chosen, role = Role.RadioButton, onClick = { onSelect(p) })
+                                        .padding(vertical = 8.dp),
+                                ) {
+                                    // 地の色の上に、文字色で「>_」を描いた見本
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(52.dp)
+                                            .border(
+                                                if (chosen) 3.dp else 1.dp,
+                                                if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                                RoundedCornerShape(14.dp),
+                                            )
+                                            .padding(4.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(scheme.surfaceContainer),
+                                    ) {
+                                        Text(">_", fontFamily = MONO, fontWeight = FontWeight.Bold, color = scheme.primary)
+                                    }
+                                    Text(p.label, style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
+        )
     }
 
     @Composable
@@ -218,6 +297,8 @@ class MainActivity : ComponentActivity() {
         val pairing by PairingService.state.collectAsState()
         var editing by remember { mutableStateOf<Recipe?>(null) }
         var input by rememberSaveable { mutableStateOf("") }
+        var recipeMenu by remember { mutableStateOf(false) }
+        var confirm by remember { mutableStateOf<RecipeReset?>(null) }
 
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -229,7 +310,27 @@ class MainActivity : ComponentActivity() {
                 item { SectionTitle("関連アプリ") }
                 items(relatedApps, key = { it.packageName }) { app -> RelatedAppCard(app, run) }
             }
-            item { SectionTitle("レシピ") }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionTitle("レシピ", Modifier.weight(1f))
+                    Box {
+                        TextButton(onClick = { recipeMenu = true }) { Text("整理") }
+                        DropdownMenu(expanded = recipeMenu, onDismissRequest = { recipeMenu = false }) {
+                            DropdownMenuItem(text = { Text("最初の例に戻す") }, onClick = {
+                                recipeMenu = false
+                                confirm = RecipeReset.EXAMPLES
+                            })
+                            DropdownMenuItem(text = { Text("すべて削除") }, onClick = {
+                                recipeMenu = false
+                                confirm = RecipeReset.CLEAR
+                            })
+                        }
+                    }
+                }
+            }
+            if (recipes.isEmpty()) {
+                item { Note("レシピはありません。「＋ レシピを追加」か、その場で打ったコマンドの「レシピにする」で作れます。") }
+            }
             items(recipes, key = { it.id }) { recipe ->
                 RecipeCard(
                     recipe,
@@ -268,6 +369,29 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+
+        confirm?.let { kind ->
+            AlertDialog(
+                onDismissRequest = { confirm = null },
+                title = { Text(if (kind == RecipeReset.CLEAR) "すべてのレシピを削除しますか" else "最初の例に戻しますか") },
+                text = {
+                    Text(
+                        if (kind == RecipeReset.CLEAR) {
+                            "登録したレシピをすべて消します。元に戻せません。"
+                        } else {
+                            "登録したレシピを消して、最初から入っている例だけにします。元に戻せません。"
+                        },
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (kind == RecipeReset.CLEAR) vm.clearRecipes() else vm.resetRecipes()
+                        confirm = null
+                    }) { Text(if (kind == RecipeReset.CLEAR) "削除" else "戻す", color = MaterialTheme.colorScheme.ng) }
+                },
+                dismissButton = { TextButton(onClick = { confirm = null }) { Text("やめる") } },
+            )
         }
 
         editing?.let { recipe ->
@@ -326,7 +450,7 @@ class MainActivity : ComponentActivity() {
                     Modifier
                         .size(10.dp)
                         .clip(RoundedCornerShape(5.dp))
-                        .background(if (port != null) OkColor else NgColor),
+                        .background(if (port != null) MaterialTheme.colorScheme.ok else MaterialTheme.colorScheme.ng),
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(
@@ -386,7 +510,7 @@ class MainActivity : ComponentActivity() {
             for (action in app.actions) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(action.label, modifier = Modifier.weight(1f))
-                    Button(onClick = { run("${app.name}: ${action.label}", action.command) }) { Text("▶ 実行") }
+                    FilledTonalButton(onClick = { run("${app.name}: ${action.label}", action.command) }) { Text("▶ 実行") }
                 }
             }
         }
@@ -414,7 +538,7 @@ class MainActivity : ComponentActivity() {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Button(onClick = onRun, modifier = Modifier.padding(start = 8.dp)) { Text("▶ 実行") }
+                FilledTonalButton(onClick = onRun, modifier = Modifier.padding(start = 8.dp)) { Text("▶ 実行") }
             }
             Row {
                 TextButton(onClick = onEdit) { Text("✎ 編集") }
@@ -443,8 +567,11 @@ class MainActivity : ComponentActivity() {
                 }
                 when {
                     log.running -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    log.error != null -> Text("失敗", color = NgColor)
-                    else -> Text("終了 ${log.exitCode}", color = if (log.exitCode == 0) OkColor else NgColor)
+                    log.error != null -> Text("失敗", color = MaterialTheme.colorScheme.ng)
+                    else -> Text(
+                        "終了 ${log.exitCode}",
+                        color = if (log.exitCode == 0) MaterialTheme.colorScheme.ok else MaterialTheme.colorScheme.ng,
+                    )
                 }
             }
             val body = log.error ?: log.output
@@ -459,7 +586,7 @@ class MainActivity : ComponentActivity() {
                             .fillMaxWidth()
                             .heightIn(max = 360.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(OutputBackground)
+                            .background(MaterialTheme.colorScheme.output)
                             .padding(10.dp),
                     )
                 }
@@ -501,7 +628,7 @@ class MainActivity : ComponentActivity() {
                         maxLines = 14,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    if (!isNew) TextButton(onClick = onDelete) { Text("このレシピを削除", color = NgColor) }
+                    if (!isNew) TextButton(onClick = onDelete) { Text("このレシピを削除", color = MaterialTheme.colorScheme.ng) }
                 }
             },
             confirmButton = {

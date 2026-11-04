@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.rou39.pocketshell.adb.AdbDiscovery
 import com.rou39.pocketshell.adb.AdbShell
 import com.rou39.pocketshell.data.Recipe
+import com.rou39.pocketshell.ui.ThemePalette
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +29,11 @@ data class RunLog(
 
 class ShellViewModel(app: Application) : AndroidViewModel(app) {
     private val store = (app as PocketShellApp).recipes
+    private val settings = (app as PocketShellApp).settings
+
+    val palette: StateFlow<ThemePalette> = settings.palette.stateIn(viewModelScope, SharingStarted.Eagerly, ThemePalette.TERMINAL)
+
+    fun setPalette(palette: ThemePalette) = viewModelScope.launch { settings.setPalette(palette) }
     private val discovery = AdbDiscovery(app, AdbDiscovery.Kind.CONNECT)
 
     val recipes: StateFlow<List<Recipe>> = store.recipes.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -78,6 +84,10 @@ class ShellViewModel(app: Application) : AndroidViewModel(app) {
     fun save(recipe: Recipe) = viewModelScope.launch { store.save(recipe) }
 
     fun delete(id: String) = viewModelScope.launch { store.delete(id) }
+
+    fun resetRecipes() = viewModelScope.launch { store.resetToExamples() }
+
+    fun clearRecipes() = viewModelScope.launch { store.clear() }
 
     fun move(id: String, offset: Int) = viewModelScope.launch { store.move(id, offset) }
 

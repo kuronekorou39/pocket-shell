@@ -32,6 +32,12 @@ class RecipeStore(private val context: Context) {
 
     suspend fun delete(id: String) = update { list -> list.filterNot { it.id == id } }
 
+    /** 最初の例だけにする。 */
+    suspend fun resetToExamples() = update { EXAMPLES }
+
+    /** すべて消す。空のまま保存するので、最初の例も出ない。 */
+    suspend fun clear() = update { emptyList() }
+
     suspend fun move(id: String, offset: Int) = update { list ->
         val from = list.indexOfFirst { it.id == id }
         val to = from + offset
@@ -49,8 +55,8 @@ class RecipeStore(private val context: Context) {
         /** 最初に出す例。誰の端末でも意味があるものだけにする（関連アプリ用のコマンドは RelatedApps に置く）。 */
         val EXAMPLES = listOf(
             Recipe("example-whoami", "シェル権限の確認", "id"),
-            Recipe("example-battery", "電池の状態", "dumpsys battery"),
-            Recipe("example-screen", "画面の解像度と密度", "wm size; wm density"),
+            // 権限の付与などでは、まずアプリのパッケージ名を調べることが多い
+            Recipe("example-packages", "入れたアプリの一覧", "pm list packages -3 | sort"),
         )
     }
 }
