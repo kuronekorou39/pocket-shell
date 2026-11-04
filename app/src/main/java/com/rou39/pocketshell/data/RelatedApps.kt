@@ -1,6 +1,7 @@
 package com.rou39.pocketshell.data
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 
 /**
@@ -28,7 +29,18 @@ object RelatedApps {
         bento("Bento Home（デバッグ版）", "com.rou39.bentohome.debug"),
     )
 
-    fun installed(context: Context): List<RelatedApp> = ALL.filter { app ->
+    /**
+     * 入っている関連アプリ。キャプチャを撮るときは出さない（紛らわしいので）。
+     * デバッグ版だけ、`adb shell setprop debug.pocketshell.screenshot 1` で隠せる。
+     */
+    fun installed(context: Context): List<RelatedApp> = if (screenshotMode(context)) emptyList() else ALL.filter { app ->
         runCatching { context.packageManager.getPackageInfo(app.packageName, PackageManager.PackageInfoFlags.of(0)) }.isSuccess
+    }
+
+    private fun screenshotMode(context: Context): Boolean {
+        if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return false
+        return runCatching {
+            Runtime.getRuntime().exec(arrayOf("getprop", "debug.pocketshell.screenshot")).inputStream.bufferedReader().readText().trim() == "1"
+        }.getOrDefault(false)
     }
 }

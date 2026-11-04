@@ -6,7 +6,8 @@
 
 Android の設定 → デバイス情報 を開き、「ビルド番号」を7回続けて押します。「デベロッパーになりました」と出れば完了です。
 
-<img src="images/setup/01-build-number.png" width="320" alt="デバイス情報のビルド番号">
+<img src="images/setup/01-build-number.png" width="320" alt="デバイス情報のビルド番号"><br>
+この行を7回続けて押します。
 
 ## 2. ワイヤレスデバッグをオンにする
 

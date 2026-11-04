@@ -100,6 +100,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -351,7 +353,7 @@ class MainActivity : ComponentActivity() {
             item { SwitchRow(canToggle, connected = port != null, run) }
             item { ConnectionCard(port, manualPort, pairing, canToggle) }
             if (relatedApps.isNotEmpty()) {
-                item { SectionTitle("関連アプリ") }
+                item { RelatedTitle() }
                 items(relatedApps, key = { it.packageName }) { app -> RelatedAppCard(app, run) }
             }
             item {
@@ -614,6 +616,30 @@ class MainActivity : ComponentActivity() {
         PairingState.Pairing -> "ペアリング: 確認しています…"
         PairingState.Done -> "ペアリング済み"
         is PairingState.Failed -> s.message
+    }
+
+    /** 関連アプリの見出し。i を押すと1行の説明を出す。 */
+    @Composable
+    private fun RelatedTitle() {
+        var open by rememberSaveable { mutableStateOf(false) }
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SectionTitle("関連アプリ")
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .padding(start = 8.dp, top = 8.dp)
+                        .size(22.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(if (open) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .toggleable(value = open, role = Role.Button, onValueChange = { open = it })
+                        .semantics { contentDescription = "関連アプリの説明" },
+                ) {
+                    Text("i", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            if (open) Note("入っている対応アプリと一緒に使うためのボタンです。", Modifier.padding(start = 4.dp, top = 4.dp))
+        }
     }
 
     /** 入っている関連アプリの操作。中身のコマンドは見せず、ボタンだけにする。 */
