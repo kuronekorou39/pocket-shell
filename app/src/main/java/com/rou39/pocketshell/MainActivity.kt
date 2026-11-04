@@ -69,7 +69,16 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.rou39.pocketshell.adb.WirelessDebugging
+import com.rou39.pocketshell.adb.DebugSettings
+import com.rou39.pocketshell.adb.DebugSwitch
+import android.database.ContentObserver
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
+import android.os.Handler
+import android.os.Looper
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.selection.toggleable
 import com.rou39.pocketshell.data.Recipe
 import com.rou39.pocketshell.data.RelatedApp
 import com.rou39.pocketshell.data.RelatedApps
@@ -131,6 +140,35 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshPermissions() {
         localNetworkGranted = checkSelfPermission(LOCAL_NETWORK) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /** USB デバッグ・ワイヤレスデバッグの今の値。 */
+    private var switchStates by mutableStateOf<Map<DebugSwitch, Boolean>>(emptyMap())
+
+    private fun refreshSwitches() {
+        switchStates = DebugSwitch.entries.associateWith { DebugSettings.isOn(this, it) }
+    }
+
+    private val switchObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) = refreshSwitches()
+    }
+
+    /** USB デバッグは設定値では追えないので、USB の状態の通知で追う。 */
+    private val usbStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) = refreshSwitches()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        DebugSwitch.entries.forEach { contentResolver.registerContentObserver(DebugSettings.uri(it), false, switchObserver) }
+        registerReceiver(usbStateReceiver, IntentFilter(DebugSettings.USB_STATE), RECEIVER_EXPORTED)
+        refreshSwitches()
+    }
+
+    override fun onStop() {
+        contentResolver.unregisterContentObserver(switchObserver)
+        unregisterReceiver(usbStateReceiver)
+        super.onStop()
     }
 
     override fun onResume() {
@@ -302,14 +340,15 @@ class MainActivity : ComponentActivity() {
         var confirm by remember { mutableStateOf<RecipeReset?>(null) }
         // 権限を付けるコマンドを実行したあとに分かるよう、記録が変わるたびに調べ直す
         val logs by vm.logs.collectAsState()
-        val canToggle = remember(logs, port) { WirelessDebugging.canToggle(this@MainActivity) }
+        val canToggle = remember(logs, port) { DebugSettings.canToggle(this@MainActivity) }
 
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(16.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            item { ConnectionCard(port, manualPort, pairing, canToggle, run) }
+            item { SwitchRow(canToggle, connected = port != null, run) }
+            item { ConnectionCard(port, manualPort, pairing, canToggle) }
             if (relatedApps.isNotEmpty()) {
                 item { SectionTitle("関連アプリ") }
                 items(relatedApps, key = { it.packageName }) { app -> RelatedAppCard(app, run) }
@@ -442,6 +481,59 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * USB デバッグ・ワイヤレスデバッグのスイッチ。横に並べる。
+     * 切り替えの許可がまだ無ければスイッチは今の状態を見せるだけにし、つながっていれば許可を付けるボタンを出す。
+     */
+    @Composable
+    private fun SwitchRow(canToggle: Boolean, connected: Boolean, run: (String, String) -> Unit) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                for (sw in DebugSwitch.entries) {
+                    val on = switchStates[sw] == true
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+                            )
+                            .toggleable(
+                                value = on,
+                                enabled = canToggle,
+                                role = Role.Switch,
+                                onValueChange = { v ->
+                                    DebugSettings.set(this@MainActivity, sw, v)
+                                    refreshSwitches()
+                                },
+                            )
+                            .padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+                    ) {
+                        Text(
+                            sw.label,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(checked = on, onCheckedChange = null, enabled = canToggle)
+                    }
+                }
+            }
+            if (!canToggle) {
+                if (connected) {
+                    // つながっている今のうちに自分に権限を付けておくと、次からはスイッチで切り替えられる
+                    Note("許可すると、このスイッチで切り替えられるようになります。再起動しても残ります。")
+                    FilledTonalButton(onClick = { run("スイッチで切り替えられるようにする", DebugSettings.grantCommand(this@MainActivity)) }) {
+                        Text("スイッチで切り替えられるようにする")
+                    }
+                } else {
+                    Note("スイッチで切り替えるには、一度ワイヤレスデバッグでつないで許可を付けます（下の手順）。")
+                }
+            }
+        }
+    }
+
     /** 接続の状態。ワイヤレスデバッグの接続先が見つかっているか、ペアリングの進み具合。 */
     @Composable
     private fun ConnectionCard(
@@ -449,7 +541,6 @@ class MainActivity : ComponentActivity() {
         manualPort: Int?,
         pairing: PairingState,
         canToggle: Boolean,
-        run: (String, String) -> Unit,
     ) {
         var showManual by rememberSaveable { mutableStateOf(false) }
         // つながっていてペアリングも済んでいれば、説明は畳んで1行にする
@@ -472,19 +563,9 @@ class MainActivity : ComponentActivity() {
                 Note("ワイヤレスデバッグのポートを探すのに「ローカルネットワーク」の許可が要ります（端末の中だけを探します）。")
                 Button(onClick = { localNetworkPermission.launch(LOCAL_NETWORK) }) { Text("許可する") }
             } else if (port == null && canToggle) {
-                // 前に権限を付けてあれば、ここから直接オンにできる
-                Button(onClick = { WirelessDebugging.setEnabled(this@MainActivity, true) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("ワイヤレスデバッグをオンにする")
-                }
-                Note("Wi-Fi につながっている必要があります。初めてつなぐ Wi-Fi では、開発者向けオプションから一度オンにしてください。")
+                Note("上のスイッチでワイヤレスデバッグをオンにしてください。Wi-Fi につながっている必要があります。初めてつなぐ Wi-Fi では、開発者向けオプションから一度オンにしてください。")
             } else if (port == null) {
                 Note("開発者向けオプションで「ワイヤレスデバッグ」をオンにしてください。Wi-Fi につながっている必要があります。再起動するとオフに戻ります。")
-            } else if (!canToggle) {
-                // つながっている今のうちに自分に権限を付けておくと、次からはボタンでオンにできる
-                Note("再起動するとワイヤレスデバッグはオフに戻ります。許可しておくと、次からはここのボタンでオンにできます。")
-                FilledTonalButton(onClick = { run("ボタンでオンにできるようにする", WirelessDebugging.grantCommand(this@MainActivity)) }) {
-                    Text("ボタンでオンにできるようにする")
-                }
             }
             pairingMessage(pairing)?.let { Note(it) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -501,14 +582,7 @@ class MainActivity : ComponentActivity() {
                         "画面の上から通知欄を下ろし、Pocket Shell の通知の「コードを入力」に6桁を入れます。",
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { showManual = !showManual }) { Text(if (showManual) "ポートの手入力を閉じる" else "ポートを手で入れる") }
-                Spacer(Modifier.weight(1f))
-                // 使い終わったら閉じられるように
-                if (port != null && canToggle) {
-                    TextButton(onClick = { WirelessDebugging.setEnabled(this@MainActivity, false) }) { Text("オフにする") }
-                }
-            }
+            TextButton(onClick = { showManual = !showManual }) { Text(if (showManual) "ポートの手入力を閉じる" else "ポートを手で入れる") }
             if (showManual) {
                 OutlinedTextField(
                     value = manualPort?.toString().orEmpty(),

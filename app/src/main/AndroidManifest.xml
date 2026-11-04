@@ -14,7 +14,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!--
-      ワイヤレスデバッグをアプリから直接オンオフする（adb/WirelessDebugging.kt）。
+      USB デバッグ・ワイヤレスデバッグをアプリから直接オンオフする（adb/DebugSettings.kt）。
       普通のアプリには付かず、ユーザーが Pocket Shell 自身の adb で pm grant したときだけ有効になる
     -->
     <uses-permission
