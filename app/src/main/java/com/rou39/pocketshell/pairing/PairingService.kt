@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
 sealed interface PairingState {
     data object Idle : PairingState
 
-    /** 「ペア設定コードによるデバイスのペア設定」の画面が開くのを待っている。 */
+    /** 「専用コード（ペア設定コード）によるデバイスのペア設定」の画面が開くのを待っている（Android 17 は「専用コード」、それより前は「ペア設定コード」）。 */
     data object Searching : PairingState
 
     /** 画面が開いた。通知からコードを入力できる。 */
@@ -96,7 +96,12 @@ class PairingService : Service() {
                 .onSuccess { finish(PairingState.Done) }
                 .onFailure { e ->
                     // コードの打ち間違いはよくあるので、待ち受けは続けてやり直せるようにする
-                    update(PairingState.Failed("ペアリングできませんでした: ${AdbShell.describe(e)}"))
+                    update(
+                        PairingState.Failed(
+                            "ペアリングできませんでした: ${AdbShell.describe(e)}。" +
+                                "すでにペアリング済みのときも失敗します（アプリに「接続できます」と出ていれば不要です）",
+                        ),
+                    )
                     delay(RETRY_DELAY_MS)
                     discovery?.port?.value?.let { update(PairingState.Ready(it)) } ?: update(PairingState.Searching)
                 }
@@ -138,7 +143,7 @@ class PairingService : Service() {
         if (state.value !is PairingState.Searching && state.value !is PairingState.Ready) builder.setContentIntent(open)
         when (val s = state.value) {
             PairingState.Searching -> builder
-                .setContentText("「ワイヤレスデバッグ」→「ペア設定コードによるデバイスのペア設定」を開いてください")
+                .setContentText("「ワイヤレスデバッグ」→「専用コード（ペア設定コード）によるデバイスのペア設定」を開いてください")
                 .setOngoing(true)
                 .addAction(cancelAction())
             is PairingState.Ready -> {
@@ -203,6 +208,12 @@ class PairingService : Service() {
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, PairingService::class.java))
+        }
+
+        /** 待ち受けをやめる（アプリの「ペアリングをやめる」から）。 */
+        fun cancel(context: Context) {
+            if (state.value is PairingState.Idle) return
+            context.startService(Intent(context, PairingService::class.java).setAction(ACTION_CANCEL))
         }
     }
 }

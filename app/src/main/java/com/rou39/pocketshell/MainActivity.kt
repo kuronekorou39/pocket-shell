@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.widget.Toast
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -501,11 +502,18 @@ class MainActivity : ComponentActivity() {
                             )
                             .toggleable(
                                 value = on,
-                                enabled = canToggle,
                                 role = Role.Switch,
                                 onValueChange = { v ->
-                                    DebugSettings.set(this@MainActivity, sw, v)
-                                    refreshSwitches()
+                                    if (canToggle) {
+                                        DebugSettings.set(this@MainActivity, sw, v)
+                                        refreshSwitches()
+                                    } else {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            if (connected) "先に「スイッチで切り替えられるようにする」を押してください" else "先にワイヤレスデバッグでつないで、許可を付けてください",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
                                 },
                             )
                             .padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
@@ -516,7 +524,8 @@ class MainActivity : ComponentActivity() {
                             color = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.weight(1f),
                         )
-                        Switch(checked = on, onCheckedChange = null, enabled = canToggle)
+                        // 許可が無くても今の状態はそのままの色で見せる（灰色だとオフに見える）
+                        Switch(checked = on, onCheckedChange = null)
                     }
                 }
             }
@@ -570,15 +579,17 @@ class MainActivity : ComponentActivity() {
             pairingMessage(pairing)?.let { Note(it) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = ::openDeveloperOptions) { Text("開発者向けオプション") }
-                FilledTonalButton(
-                    onClick = ::requestPairing,
-                    enabled = pairing !is PairingState.Searching && pairing !is PairingState.Ready && pairing !is PairingState.Pairing,
-                ) { Text("ペアリング") }
+                val waiting = pairing is PairingState.Searching || pairing is PairingState.Ready || pairing is PairingState.Pairing
+                if (waiting) {
+                    FilledTonalButton(onClick = { PairingService.cancel(this@MainActivity) }) { Text("ペアリングをやめる") }
+                } else {
+                    FilledTonalButton(onClick = ::requestPairing) { Text("ペアリング") }
+                }
             }
             if (!ready && !canToggle) {
                 Note(
                     "ペアリングは最初の1回だけ。「ペアリング」を押すと設定が開くので、「ワイヤレスデバッグ」→" +
-                        "「ペア設定コードによるデバイスのペア設定」を開きます。コードのダイアログは開いたまま、" +
+                        "「専用コード（ペア設定コード）によるデバイスのペア設定」を開きます。コードのダイアログは開いたまま、" +
                         "画面の上から通知欄を下ろし、Pocket Shell の通知の「コードを入力」に6桁を入れます。",
                 )
             }
@@ -598,7 +609,7 @@ class MainActivity : ComponentActivity() {
 
     private fun pairingMessage(s: PairingState): String? = when (s) {
         PairingState.Idle -> null
-        PairingState.Searching -> "ペアリング: 「ペア設定コードによるデバイスのペア設定」を開いてください"
+        PairingState.Searching -> "ペアリング: 「専用コード（ペア設定コード）によるデバイスのペア設定」を開いてください"
         is PairingState.Ready -> "ペアリング: 通知にコードを入力してください"
         PairingState.Pairing -> "ペアリング: 確認しています…"
         PairingState.Done -> "ペアリング済み"

@@ -17,7 +17,7 @@ import java.util.concurrent.Executors
  */
 class AdbDiscovery(context: Context, private val kind: Kind) {
     enum class Kind(val serviceType: String) {
-        /** 「ペア設定コードによるデバイスのペア設定」を開いている間だけ出る。 */
+        /** ペア設定のダイアログ（専用コード／ペア設定コード）を開いている間だけ出る。 */
         PAIRING("_adb-tls-pairing._tcp"),
 
         /** ワイヤレスデバッグがオンの間ずっと出る。コマンドの実行はこちらへつなぐ。 */
