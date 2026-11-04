@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 端末内の adbd（127.0.0.1）へつなぐためだけに使う。外部への通信はしない -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -12,6 +13,13 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!--
+      ワイヤレスデバッグをアプリから直接オンオフする（adb/WirelessDebugging.kt）。
+      普通のアプリには付かず、ユーザーが Pocket Shell 自身の adb で pm grant したときだけ有効になる
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- 関連アプリ（data/RelatedApps.kt）が入っているかを調べる -->
     <queries>

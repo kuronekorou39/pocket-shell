@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.rou39.pocketshell.adb.WirelessDebugging
 import com.rou39.pocketshell.data.Recipe
 import com.rou39.pocketshell.data.RelatedApp
 import com.rou39.pocketshell.data.RelatedApps
@@ -299,13 +300,16 @@ class MainActivity : ComponentActivity() {
         var input by rememberSaveable { mutableStateOf("") }
         var recipeMenu by remember { mutableStateOf(false) }
         var confirm by remember { mutableStateOf<RecipeReset?>(null) }
+        // 権限を付けるコマンドを実行したあとに分かるよう、記録が変わるたびに調べ直す
+        val logs by vm.logs.collectAsState()
+        val canToggle = remember(logs, port) { WirelessDebugging.canToggle(this@MainActivity) }
 
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(16.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            item { ConnectionCard(port, manualPort, pairing) }
+            item { ConnectionCard(port, manualPort, pairing, canToggle, run) }
             if (relatedApps.isNotEmpty()) {
                 item { SectionTitle("関連アプリ") }
                 items(relatedApps, key = { it.packageName }) { app -> RelatedAppCard(app, run) }
@@ -440,7 +444,13 @@ class MainActivity : ComponentActivity() {
 
     /** 接続の状態。ワイヤレスデバッグの接続先が見つかっているか、ペアリングの進み具合。 */
     @Composable
-    private fun ConnectionCard(port: Int?, manualPort: Int?, pairing: PairingState) {
+    private fun ConnectionCard(
+        port: Int?,
+        manualPort: Int?,
+        pairing: PairingState,
+        canToggle: Boolean,
+        run: (String, String) -> Unit,
+    ) {
         var showManual by rememberSaveable { mutableStateOf(false) }
         // つながっていてペアリングも済んでいれば、説明は畳んで1行にする
         val ready = port != null && localNetworkGranted
@@ -461,8 +471,20 @@ class MainActivity : ComponentActivity() {
             if (!localNetworkGranted) {
                 Note("ワイヤレスデバッグのポートを探すのに「ローカルネットワーク」の許可が要ります（端末の中だけを探します）。")
                 Button(onClick = { localNetworkPermission.launch(LOCAL_NETWORK) }) { Text("許可する") }
+            } else if (port == null && canToggle) {
+                // 前に権限を付けてあれば、ここから直接オンにできる
+                Button(onClick = { WirelessDebugging.setEnabled(this@MainActivity, true) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("ワイヤレスデバッグをオンにする")
+                }
+                Note("Wi-Fi につながっている必要があります。初めてつなぐ Wi-Fi では、開発者向けオプションから一度オンにしてください。")
             } else if (port == null) {
                 Note("開発者向けオプションで「ワイヤレスデバッグ」をオンにしてください。Wi-Fi につながっている必要があります。再起動するとオフに戻ります。")
+            } else if (!canToggle) {
+                // つながっている今のうちに自分に権限を付けておくと、次からはボタンでオンにできる
+                Note("再起動するとワイヤレスデバッグはオフに戻ります。許可しておくと、次からはここのボタンでオンにできます。")
+                FilledTonalButton(onClick = { run("ボタンでオンにできるようにする", WirelessDebugging.grantCommand(this@MainActivity)) }) {
+                    Text("ボタンでオンにできるようにする")
+                }
             }
             pairingMessage(pairing)?.let { Note(it) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -472,14 +494,21 @@ class MainActivity : ComponentActivity() {
                     enabled = pairing !is PairingState.Searching && pairing !is PairingState.Ready && pairing !is PairingState.Pairing,
                 ) { Text("ペアリング") }
             }
-            if (!ready) {
+            if (!ready && !canToggle) {
                 Note(
                     "ペアリングは最初の1回だけ。「ペアリング」を押すと設定が開くので、「ワイヤレスデバッグ」→" +
                         "「ペア設定コードによるデバイスのペア設定」を開きます。コードのダイアログは開いたまま、" +
                         "画面の上から通知欄を下ろし、Pocket Shell の通知の「コードを入力」に6桁を入れます。",
                 )
             }
-            TextButton(onClick = { showManual = !showManual }) { Text(if (showManual) "ポートの手入力を閉じる" else "ポートを手で入れる") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { showManual = !showManual }) { Text(if (showManual) "ポートの手入力を閉じる" else "ポートを手で入れる") }
+                Spacer(Modifier.weight(1f))
+                // 使い終わったら閉じられるように
+                if (port != null && canToggle) {
+                    TextButton(onClick = { WirelessDebugging.setEnabled(this@MainActivity, false) }) { Text("オフにする") }
+                }
+            }
             if (showManual) {
                 OutlinedTextField(
                     value = manualPort?.toString().orEmpty(),
